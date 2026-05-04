@@ -1,4 +1,8 @@
+"use client";
+
+import { useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { HugeiconsIcon } from "@hugeicons/react";
 import {
   Shield01Icon,
@@ -10,8 +14,17 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { useAuth } from "@/lib/auth";
 
 export default function Home() {
+  const { state } = useAuth();
+  const router = useRouter();
+
+  useEffect(() => {
+    if (state.status === "authenticated") router.replace("/app");
+    else if (state.status === "needs-unlock") router.replace("/unlock");
+  }, [state.status, router]);
+
   return (
     <main className="bg-dotted flex flex-1 flex-col items-center justify-center px-6 py-16">
       <div className="flex w-full max-w-4xl flex-col items-center gap-10 text-center">
