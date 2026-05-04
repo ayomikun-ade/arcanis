@@ -12,7 +12,9 @@
 
 import {
   keepPreviousData,
+  useInfiniteQuery,
   useQuery,
+  type UseInfiniteQueryResult,
   type UseQueryResult,
 } from "@tanstack/react-query";
 
@@ -26,11 +28,12 @@ import type {
 
 export const queryKeys = {
   conversations: () => ["conversations"] as const,
-  messages: (userId: string, before?: string) =>
-    ["messages", userId, before ?? null] as const,
+  messages: (userId: string) => ["messages", userId] as const,
   userSearch: (q: string) => ["users", "search", q] as const,
   publicKey: (userId: string) => ["users", userId, "public-key"] as const,
 };
+
+const MESSAGES_PAGE_SIZE = 50;
 
 /** All conversations for the current user, sorted newest first by the API. */
 export function useConversations(): UseQueryResult<ConversationSummary[]> {
@@ -77,12 +80,22 @@ export function usePublicKey(
  */
 export function useMessages(
   userId: string | null,
-  opts?: { limit?: number; before?: string },
-): UseQueryResult<MessageResponse[]> {
+): UseInfiniteQueryResult<{ pages: MessageResponse[][]; pageParams: unknown[] }> {
   const { client, state } = useAuth();
-  return useQuery({
-    queryKey: queryKeys.messages(userId ?? "", opts?.before),
-    queryFn: () => client.getMessages(userId!, opts),
+  return useInfiniteQuery({
+    queryKey: queryKeys.messages(userId ?? ""),
+    queryFn: ({ pageParam }) =>
+      client.getMessages(userId!, {
+        limit: MESSAGES_PAGE_SIZE,
+        before: pageParam,
+      }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (lastPage): string | undefined => {
+      // Empty page or short page → no more history.
+      if (lastPage.length < MESSAGES_PAGE_SIZE) return undefined;
+      // API returns newest-first, so the last item in the page is the oldest.
+      return lastPage[lastPage.length - 1]!.created_at;
+    },
     enabled: state.status === "authenticated" && !!userId,
   });
 }
