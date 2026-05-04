@@ -16,6 +16,7 @@ import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Spinner } from "@/components/ui/spinner";
+import { ConnectionStatus } from "@/components/app/connection-status";
 import { useDebouncedValue } from "@/lib/hooks/use-debounced-value";
 import { useConversations, useUserSearch } from "@/lib/queries";
 import { useAuth } from "@/lib/auth";
@@ -60,6 +61,7 @@ export function Sidebar({ className }: { className?: string }) {
             E2EE
           </Badge>
         </Link>
+        <ConnectionStatus />
       </div>
 
       {/* Search */}

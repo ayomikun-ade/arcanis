@@ -16,7 +16,9 @@ import { Spinner } from "@/components/ui/spinner";
 import { useAuth, type AuthState } from "@/lib/auth";
 import { useDecryptedMessages } from "@/lib/hooks/use-decrypted-messages";
 import { useMessages } from "@/lib/queries";
+import { useWs } from "@/lib/ws/context";
 import type { MessageResponse } from "@/lib/api";
+import { cn } from "@/lib/utils";
 
 import { Composer } from "./composer";
 import { MessageBubble } from "./message-bubble";
@@ -34,7 +36,7 @@ interface ChatThreadProps {
 export function ChatThread({ userId, peer }: ChatThreadProps) {
   return (
     <div className="flex flex-1 flex-col overflow-hidden">
-      <ChatHeader peer={peer} />
+      <ChatHeader userId={userId} peer={peer} />
       <ChatBody userId={userId} />
       <Composer
         recipientUserId={userId}
@@ -49,7 +51,16 @@ export function ChatThread({ userId, peer }: ChatThreadProps) {
 
 /* ───────────────── Header ───────────────── */
 
-function ChatHeader({ peer }: { peer: PeerSummary | null }) {
+function ChatHeader({
+  userId,
+  peer,
+}: {
+  userId: string;
+  peer: PeerSummary | null;
+}) {
+  const { presence } = useWs();
+  const isOnline = presence[userId] === true;
+
   return (
     <header className="flex items-center gap-3 border-b-2 border-border bg-card px-4 py-3">
       <Link
@@ -61,13 +72,25 @@ function ChatHeader({ peer }: { peer: PeerSummary | null }) {
       </Link>
       {peer ? (
         <>
-          <Avatar name={peer.display_name} size="md" />
+          <div className="relative shrink-0">
+            <Avatar name={peer.display_name} size="md" />
+            {isOnline && (
+              <span
+                aria-label="Online"
+                title="Online"
+                className={cn(
+                  "absolute -bottom-0.5 -right-0.5 block size-3 rounded-full",
+                  "border-2 border-card bg-success",
+                )}
+              />
+            )}
+          </div>
           <div className="min-w-0 flex-1">
             <h2 className="truncate text-base font-bold leading-tight">
               {peer.display_name}
             </h2>
             <p className="truncate text-xs text-muted-foreground">
-              @{peer.username}
+              {isOnline ? "Online" : `@${peer.username}`}
             </p>
           </div>
         </>

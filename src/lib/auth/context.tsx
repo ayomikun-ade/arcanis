@@ -73,6 +73,10 @@ export type AuthState =
 export interface AuthContextValue {
   state: AuthState;
   client: ApiClient;
+  /** Read-through access to the current in-memory access token. */
+  getAccessToken: () => string | null;
+  /** Force a refresh; returns the new token or null on failure. */
+  refreshAccessToken: () => Promise<string | null>;
   register: (form: RegisterFormData) => Promise<void>;
   login: (form: LoginFormData) => Promise<void>;
   unlock: (password: string) => Promise<void>;
@@ -241,9 +245,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setState({ status: "anonymous" });
   }, []);
 
+  const getAccessToken = useCallback(() => accessTokenRef.current, []);
+
   const value = useMemo<AuthContextValue>(
-    () => ({ state, client, register, login, unlock, logout }),
-    [state, client, register, login, unlock, logout],
+    () => ({
+      state,
+      client,
+      getAccessToken,
+      refreshAccessToken,
+      register,
+      login,
+      unlock,
+      logout,
+    }),
+    [
+      state,
+      client,
+      getAccessToken,
+      refreshAccessToken,
+      register,
+      login,
+      unlock,
+      logout,
+    ],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
