@@ -43,7 +43,9 @@ export function Composer({ recipientUserId, onSent }: ComposerProps) {
   };
 
   const onKeyDown = (e: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
+    // Enter inserts a newline (default textarea behaviour, don't intercept).
+    // Ctrl+Enter (Win/Linux) or ⌘+Enter (Mac) sends.
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey)) {
       e.preventDefault();
       void submit();
     }
@@ -80,7 +82,9 @@ export function Composer({ recipientUserId, onSent }: ComposerProps) {
           type="button"
           onClick={() => void submit()}
           disabled={send.isPending || !isReady || text.trim().length === 0}
-          aria-label="Send"
+          aria-label="Send message"
+          aria-keyshortcuts="Control+Enter Meta+Enter"
+          title="Send (Ctrl+Enter or ⌘+Enter)"
           className="grid place-items-center size-11 shrink-0 rounded-base border-2 border-border bg-primary text-primary-foreground shadow-brutal-sm transition-all hover:translate-x-[2px] hover:translate-y-[2px] hover:shadow-none active:translate-x-[3px] active:translate-y-[3px] disabled:opacity-60 disabled:pointer-events-none"
         >
           {send.isPending || !isReady ? (

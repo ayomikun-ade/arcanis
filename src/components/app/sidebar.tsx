@@ -31,7 +31,7 @@ export function Sidebar({ className }: { className?: string }) {
   const router = useRouter();
   const pathname = usePathname();
   const [query, setQuery] = useState("");
-  const debouncedQuery = useDebouncedValue(query, 250);
+  const debouncedQuery = useDebouncedValue(query, 1000);
   const isSearching = debouncedQuery.trim().length > 0;
 
   const conversations = useConversations();
