@@ -14,6 +14,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
+import { Spinner } from "@/components/ui/spinner";
 import { useAuth } from "@/lib/auth";
 
 export default function Home() {
@@ -24,6 +25,18 @@ export default function Home() {
     if (state.status === "authenticated") router.replace("/app");
     else if (state.status === "needs-unlock") router.replace("/unlock");
   }, [state.status, router]);
+
+  // While the auth state machine is bootstrapping (IndexedDB read + maybe a
+  // /api/auth/refresh call), show a centered loader instead of the hero.
+  // Otherwise returning users see the marketing hero flash for ~100ms before
+  // being redirected to /unlock — jarring.
+  if (state.status === "loading" || state.status !== "anonymous") {
+    return (
+      <main className="bg-dotted flex flex-1 items-center justify-center">
+        <Spinner size={28} />
+      </main>
+    );
+  }
 
   return (
     <main className="bg-dotted flex flex-1 flex-col items-center justify-center px-6 py-16">

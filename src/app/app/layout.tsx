@@ -33,7 +33,7 @@ function Shell({ children }: { children: ReactNode }) {
   const onConversation = pathname.startsWith("/app/conversations/");
 
   return (
-    <div className="flex flex-1 overflow-hidden">
+    <div className="flex h-dvh overflow-hidden">
       <Sidebar
         className={cn(
           "shrink-0",
