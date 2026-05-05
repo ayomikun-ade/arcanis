@@ -5,9 +5,10 @@
  *
  * Holds, in priority order:
  *   - the current state (loading | anonymous | needs-unlock | authenticated)
- *   - the in-memory access token (a ref so rotation doesn't re-render)
  *   - the unwrapped RSA CryptoKey pair (memory only; private key non-extractable)
- *   - a single ApiClient bound to the read-through token + refresh function
+ *   - a single ApiClient instance — the *client* owns the access token
+ *     internally so the React layer never has a token-holding ref flowing
+ *     into a render-time constructor (React 19 flags that as ref-during-render).
  *
  * State transitions:
  *
@@ -28,10 +29,11 @@ import {
   useContext,
   useEffect,
   useMemo,
-  useRef,
   useState,
   type ReactNode,
 } from "react";
+
+import { useQueryClient } from "@tanstack/react-query";
 
 import { ApiClient } from "@/lib/api";
 import type {
@@ -90,33 +92,21 @@ type AuthProxyResponse = Omit<AuthResponse, "refresh_token">;
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [state, setState] = useState<AuthState>({ status: "loading" });
-  const accessTokenRef = useRef<string | null>(null);
+  // Lazy-init: one ApiClient instance per signed-in browser tab. The client
+  // owns the access token internally; we push values via setAccessToken().
+  const [client] = useState(() => new ApiClient());
+  const queryClient = useQueryClient();
 
-  // Stable refresh function — doesn't depend on any state, only mutates the
-  // accessTokenRef. Safe to capture in the ApiClient constructor below.
-  const refreshAccessToken = useCallback(async (): Promise<string | null> => {
-    try {
-      const res = await fetch("/api/auth/refresh", { method: "POST" });
-      if (!res.ok) {
-        accessTokenRef.current = null;
-        return null;
-      }
-      const body = (await res.json()) as { access_token: string };
-      accessTokenRef.current = body.access_token;
-      return body.access_token;
-    } catch {
-      accessTokenRef.current = null;
-      return null;
-    }
-  }, []);
-
-  const client = useMemo(
-    () =>
-      new ApiClient({
-        getAccessToken: () => accessTokenRef.current,
-        refreshAccessToken,
-      }),
-    [refreshAccessToken],
+  // Stable wrappers around the client's token plumbing. Used by WsProvider
+  // (which needs to read the latest access token at WS-handshake time and
+  // refresh on a 4001 close).
+  const getAccessToken = useCallback(
+    () => client.getAccessToken(),
+    [client],
+  );
+  const refreshAccessToken = useCallback(
+    () => client.refresh(),
+    [client],
   );
 
   /* ────────── mount bootstrap ────────── */
@@ -131,7 +121,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
       // We have a saved blob; try to revive an access token from the cookie.
-      const newToken = await refreshAccessToken();
+      const newToken = await client.refresh();
       if (cancelled) return;
       if (newToken) {
         setState({ status: "needs-unlock", persisted });
@@ -143,7 +133,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [refreshAccessToken]);
+  }, [client]);
 
   /* ────────── operations ────────── */
 
@@ -165,7 +155,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
       if (!res.ok) throw await asProxyError(res, "Registration failed");
       const data = (await res.json()) as AuthProxyResponse;
-      accessTokenRef.current = data.access_token;
+      client.setAccessToken(data.access_token);
       await savePersistedIdentity({
         user: data.user,
         wrappedPrivateKey: exported.wrappedPrivateKey,
@@ -174,38 +164,41 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       });
       setState({ status: "authenticated", user: data.user, keys });
     },
-    [],
+    [client],
   );
 
-  const login = useCallback(async (form: LoginFormData): Promise<void> => {
-    const res = await fetch("/api/auth/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(form),
-    });
-    if (!res.ok) throw await asProxyError(res, "Login failed");
-    const data = (await res.json()) as AuthProxyResponse;
-    accessTokenRef.current = data.access_token;
-    const [privateKey, publicKey] = await Promise.all([
-      unwrapPrivateKey(
-        data.user.wrapped_private_key,
-        form.password,
-        data.user.pbkdf2_salt,
-      ),
-      importPublicKey(data.user.public_key),
-    ]);
-    await savePersistedIdentity({
-      user: data.user,
-      wrappedPrivateKey: data.user.wrapped_private_key,
-      pbkdf2Salt: data.user.pbkdf2_salt,
-      publicKey: data.user.public_key,
-    });
-    setState({
-      status: "authenticated",
-      user: data.user,
-      keys: { publicKey, privateKey },
-    });
-  }, []);
+  const login = useCallback(
+    async (form: LoginFormData): Promise<void> => {
+      const res = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      });
+      if (!res.ok) throw await asProxyError(res, "Login failed");
+      const data = (await res.json()) as AuthProxyResponse;
+      client.setAccessToken(data.access_token);
+      const [privateKey, publicKey] = await Promise.all([
+        unwrapPrivateKey(
+          data.user.wrapped_private_key,
+          form.password,
+          data.user.pbkdf2_salt,
+        ),
+        importPublicKey(data.user.public_key),
+      ]);
+      await savePersistedIdentity({
+        user: data.user,
+        wrappedPrivateKey: data.user.wrapped_private_key,
+        pbkdf2Salt: data.user.pbkdf2_salt,
+        publicKey: data.user.public_key,
+      });
+      setState({
+        status: "authenticated",
+        user: data.user,
+        keys: { publicKey, privateKey },
+      });
+    },
+    [client],
+  );
 
   const unlock = useCallback(
     async (password: string): Promise<void> => {
@@ -231,8 +224,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   const logout = useCallback(async (): Promise<void> => {
-    const token = accessTokenRef.current;
-    accessTokenRef.current = null;
+    const token = client.getAccessToken();
+    client.setAccessToken(null);
     try {
       await fetch("/api/auth/logout", {
         method: "POST",
@@ -242,10 +235,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       // best-effort — local sign-out continues regardless
     }
     await clearPersistedIdentity();
+    // Wipe all server-state cache so the next user on this device
+    // doesn't briefly see the previous user's conversations / messages.
+    queryClient.clear();
     setState({ status: "anonymous" });
-  }, []);
-
-  const getAccessToken = useCallback(() => accessTokenRef.current, []);
+  }, [client, queryClient]);
 
   const value = useMemo<AuthContextValue>(
     () => ({

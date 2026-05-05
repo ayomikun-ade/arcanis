@@ -5,9 +5,15 @@
  * Next.js proxy at /api/auth/* — that's where we manage the httpOnly
  * refresh-token cookie. See src/lib/auth/proxy.ts for those.
  *
+ * The client *owns* its access token (a private instance field). The
+ * AuthProvider pushes new values via `setAccessToken()` after register /
+ * login / unlock, and `refresh()` rotates it in-band on 401. This keeps
+ * the React layer free of refs that flow into the constructor — which
+ * React 19 flags as ref-during-render even when the read is delayed.
+ *
  * Request interceptor:  attach `Authorization: Bearer <token>` from the
- *                       in-memory access token (read-through every call so
- *                       rotations land immediately).
+ *                       internal token (read on every call so rotations
+ *                       land immediately).
  * Response interceptor: on 401, run a single-flight refresh and retry the
  *                       original request once. Concurrent 401s share one
  *                       in-flight refresh promise.
@@ -59,26 +65,21 @@ export class ApiError extends Error {
   }
 }
 
-export interface ApiClientOptions {
-  /** Read-through getter for the in-memory access token. */
-  getAccessToken: () => string | null;
-  /** Returns a new access token, or null if the refresh failed (revoked/expired). */
-  refreshAccessToken: () => Promise<string | null>;
-}
-
 export class ApiClient {
   private readonly http: AxiosInstance;
+  private accessToken: string | null = null;
   private refreshing: Promise<string | null> | null = null;
 
-  constructor(opts: ApiClientOptions) {
+  constructor() {
     this.http = axios.create({
       baseURL: env.apiBaseUrl,
       headers: { "Content-Type": "application/json" },
     });
 
     this.http.interceptors.request.use((config) => {
-      const token = opts.getAccessToken();
-      if (token) config.headers.Authorization = `Bearer ${token}`;
+      if (this.accessToken) {
+        config.headers.Authorization = `Bearer ${this.accessToken}`;
+      }
       return config;
     });
 
@@ -91,7 +92,7 @@ export class ApiClient {
           return Promise.reject(ApiError.fromAxios(error));
         }
 
-        const newToken = await this.singleFlightRefresh(opts);
+        const newToken = await this.singleFlightRefresh();
         if (!newToken) return Promise.reject(ApiError.fromAxios(error));
 
         config._retried = true;
@@ -101,11 +102,42 @@ export class ApiClient {
     );
   }
 
-  private async singleFlightRefresh(
-    opts: ApiClientOptions,
-  ): Promise<string | null> {
+  /** Push a new access token (after register / login / unlock). */
+  setAccessToken(token: string | null): void {
+    this.accessToken = token;
+  }
+
+  /** Read the current in-memory access token. Used by WsConnection at handshake time. */
+  getAccessToken(): string | null {
+    return this.accessToken;
+  }
+
+  /**
+   * Hit /api/auth/refresh, store the new token, and return it. Returns null
+   * if the refresh-token cookie is also dead. Single-flight: concurrent
+   * callers share one in-flight refresh promise.
+   */
+  refresh(): Promise<string | null> {
+    return this.singleFlightRefresh();
+  }
+
+  private singleFlightRefresh(): Promise<string | null> {
     if (!this.refreshing) {
-      this.refreshing = opts.refreshAccessToken().finally(() => {
+      this.refreshing = (async () => {
+        try {
+          const res = await fetch("/api/auth/refresh", { method: "POST" });
+          if (!res.ok) {
+            this.accessToken = null;
+            return null;
+          }
+          const body = (await res.json()) as { access_token: string };
+          this.accessToken = body.access_token;
+          return body.access_token;
+        } catch {
+          this.accessToken = null;
+          return null;
+        }
+      })().finally(() => {
         this.refreshing = null;
       });
     }
