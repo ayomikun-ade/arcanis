@@ -24,7 +24,7 @@ Submission for **Stage 4B — End-to-End Encrypted App**.
 
 ## Live demo
 
-_Add your Vercel URL here once deployed._
+Live URL: [`Arcanis`](https://arcaniss.vercel.app/)
 
 Backend: [`https://whisperbox.koyeb.app`](https://whisperbox.koyeb.app)
 
