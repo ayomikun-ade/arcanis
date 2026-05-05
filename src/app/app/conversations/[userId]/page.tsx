@@ -1,9 +1,11 @@
 "use client";
 
 import { use } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 
 import { ChatThread } from "@/components/app/chat/thread";
-import { useConversations, useUserSearch } from "@/lib/queries";
+import { useConversations } from "@/lib/queries";
+import type { UserSummary } from "@/lib/api";
 
 interface PageProps {
   params: Promise<{ userId: string }>;
@@ -19,15 +21,22 @@ export default function ConversationPage({ params }: PageProps) {
  * Best-effort peer summary for the chat header.
  *
  * The WhisperBox API has no direct GET /users/{id}, so we triangulate:
- *   1. Look in the cached conversations list (already messaging them).
- *   2. Fall back to whatever search results are already in cache.
+ *   1. The cached conversations list — fastest, present once they've
+ *      messaged each other at least once.
+ *   2. Any cached user-search result — covers the new-chat path where
+ *      the user just clicked someone out of the sidebar's search.
  *
- * Stage 7 will also capture peer info from the first received WS frame,
- * which closes the deep-link case for a brand-new contact.
+ * For a true cold deep-link (no cache hit either way) the header stays
+ * blank until the conversations cache refreshes (e.g. after the first
+ * message is sent and the conversations list invalidates).
  */
-function usePeer(userId: string) {
+function usePeer(userId: string): {
+  display_name: string;
+  username: string;
+} | null {
   const conversations = useConversations();
-  const searchAll = useUserSearch("");
+  const queryClient = useQueryClient();
+
   const fromConversation = conversations.data?.find(
     (c) => c.user_id === userId,
   );
@@ -37,8 +46,22 @@ function usePeer(userId: string) {
       username: fromConversation.username,
     };
   }
-  const fromSearch = searchAll.data?.find((u) => u.id === userId);
-  return fromSearch
-    ? { display_name: fromSearch.display_name, username: fromSearch.username }
-    : null;
+
+  // Scan every cached user-search query — keys look like
+  // ["users", "search", "<some query>"] — for a record matching userId.
+  // Whatever query the sidebar last ran will still be in cache.
+  const searchCaches = queryClient.getQueriesData<UserSummary[]>({
+    queryKey: ["users", "search"],
+  });
+  for (const [, data] of searchCaches) {
+    const hit = data?.find((u) => u.id === userId);
+    if (hit) {
+      return {
+        display_name: hit.display_name,
+        username: hit.username,
+      };
+    }
+  }
+
+  return null;
 }
