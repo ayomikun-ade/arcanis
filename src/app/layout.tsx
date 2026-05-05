@@ -1,4 +1,4 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Space_Grotesk, JetBrains_Mono } from "next/font/google";
 
 import { Providers } from "./providers";
@@ -16,10 +16,63 @@ const jetbrainsMono = JetBrains_Mono({
   display: "swap",
 });
 
+const SITE_URL = "https://arcaniss.vercel.app";
+const TITLE = "Arcanis — End-to-end encrypted messaging";
+const DESCRIPTION =
+  "A zero-knowledge messenger. Your messages are encrypted on your device — the server only ever sees ciphertext.";
+
 export const metadata: Metadata = {
-  title: "Arcanis — End-to-end encrypted messaging",
-  description:
-    "Arcanis is a zero-knowledge messenger. The server only ever sees ciphertext.",
+  metadataBase: new URL(SITE_URL),
+  title: {
+    default: TITLE,
+    template: "%s · Arcanis",
+  },
+  description: DESCRIPTION,
+  applicationName: "Arcanis",
+  keywords: [
+    "end-to-end encryption",
+    "e2ee",
+    "encrypted messaging",
+    "zero-knowledge",
+    "web crypto",
+    "RSA-OAEP",
+    "AES-GCM",
+    "secure chat",
+  ],
+  authors: [{ name: "Ayomikun" }],
+  creator: "Ayomikun",
+  openGraph: {
+    type: "website",
+    url: SITE_URL,
+    siteName: "Arcanis",
+    title: TITLE,
+    description: DESCRIPTION,
+    locale: "en_US",
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: TITLE,
+    description: DESCRIPTION,
+  },
+  robots: {
+    index: true,
+    follow: true,
+    googleBot: {
+      index: true,
+      follow: true,
+      "max-image-preview": "large",
+    },
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: [
+    { media: "(prefers-color-scheme: light)", color: "#f5f2e9" },
+    { media: "(prefers-color-scheme: dark)", color: "#1a1d22" },
+  ],
+  width: "device-width",
+  initialScale: 1,
+  maximumScale: 5,
 };
 
 export default function RootLayout({
